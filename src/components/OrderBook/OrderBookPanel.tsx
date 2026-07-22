@@ -1,6 +1,7 @@
 import { useOrderBookStore } from '../../store/orderBookStore';
 import { useMarketStore } from '../../store/marketStore';
 import { PanelPlaceholder } from '../Shared/PanelPlaceholder';
+import { TableShimmer } from '../Shared/TableShimmer';
 import { OrderBookRow } from './OrderBookRow';
 import { OrderBookMetrics } from './OrderBookMetrics';
 import { SYMBOL_CONFIG } from '../../constants/market';
@@ -48,9 +49,13 @@ export function OrderBookPanel() {
       </div>
 
       {!isReady ? (
-        <div className="p-4 flex-1">
-          <PanelPlaceholder text={status === 'disconnected' ? 'Disconnected' : 'Loading Order Book...'} />
-        </div>
+        status === 'disconnected' ? (
+          <div className="p-4 flex-1">
+            <PanelPlaceholder text="Disconnected" />
+          </div>
+        ) : (
+          <TableShimmer rowCount={40} />
+        )
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Asks Table Headers */}

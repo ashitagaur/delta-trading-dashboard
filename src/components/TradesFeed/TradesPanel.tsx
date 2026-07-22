@@ -3,6 +3,7 @@ import { useMarketStore } from '../../store/marketStore';
 import { useTradesStore } from '../../store/tradesStore';
 import { useTradesDecay } from '../../hooks/useTradesDecay';
 import { PanelPlaceholder } from '../Shared/PanelPlaceholder';
+import { TableShimmer } from '../Shared/TableShimmer';
 import { TradesRow } from './TradesRow';
 import { formatSize } from '../../utils/format';
 
@@ -46,9 +47,13 @@ export function TradesPanel() {
       </div>
 
       {!isReady ? (
-        <div className="p-4 flex-1">
-          <PanelPlaceholder text={status === 'disconnected' ? 'Disconnected' : 'Waiting for trades...'} />
-        </div>
+        status === 'disconnected' ? (
+          <div className="p-4 flex-1">
+            <PanelPlaceholder text="Disconnected" />
+          </div>
+        ) : (
+          <TableShimmer />
+        )
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {/* Stats Header */}
