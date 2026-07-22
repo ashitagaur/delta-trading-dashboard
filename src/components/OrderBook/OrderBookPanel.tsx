@@ -19,7 +19,7 @@ export function OrderBookPanel() {
   const renderAsks = [...asks].reverse();
 
   return (
-    <section className="w-full lg:w-[320px] xl:w-[360px] border-b lg:border-b-0 lg:border-r border-gray-800 bg-bg-base shrink-0 flex flex-col h-full">
+    <section className="flex-1 w-full border-b lg:border-b-0 lg:border-r border-gray-800 bg-[#0b0e11] flex flex-col h-full min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-gray-800 shrink-0">
         <div className="flex items-center gap-2">

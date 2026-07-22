@@ -3,9 +3,10 @@ import { TradeMessage } from '../types/market';
 import { ProcessedTrade, isBuyTrade, isLargeTrade } from '../utils/trades';
 
 interface TradesState {
-  rawTradesQueue: { size: number; timestamp: number }[];
+  rawTradesQueue: { size: number; timestamp: number; isBuy: boolean }[];
   aggregatedTrades: ProcessedTrade[];
-  volume1m: number;
+  buyVolume1m: number;
+  sellVolume1m: number;
   trades1m: number;
 
   addTrade: (msg: TradeMessage) => void;
@@ -16,19 +17,21 @@ interface TradesState {
 export const useTradesStore = create<TradesState>((set) => ({
   rawTradesQueue: [],
   aggregatedTrades: [],
-  volume1m: 0,
+  buyVolume1m: 0,
+  sellVolume1m: 0,
   trades1m: 0,
 
   addTrade: (msg: TradeMessage) => {
-    const tsMs = Math.floor(msg.timestamp / 1000); // Microseconds to ms
+    const tsMs = Math.floor(msg.timestamp / 1000); 
     const price = parseFloat(msg.price);
     const size = msg.size;
     const isBuy = isBuyTrade(msg.buyer_role);
 
     set((state) => {
       // 1. Manage Raw Queue & Rolling Stats
-      const newQueue = [...state.rawTradesQueue, { size, timestamp: tsMs }];
-      const newVolume = state.volume1m + size;
+      const newQueue = [...state.rawTradesQueue, { size, timestamp: tsMs, isBuy }];
+      const newBuyVolume = state.buyVolume1m + (isBuy ? size : 0);
+      const newSellVolume = state.sellVolume1m + (!isBuy ? size : 0);
       const newTradesCount = state.trades1m + 1;
 
       // 2. Aggregation Logic
@@ -71,7 +74,8 @@ export const useTradesStore = create<TradesState>((set) => ({
         return {
           rawTradesQueue: newQueue,
           aggregatedTrades: agg,
-          volume1m: newVolume - (dropped?.size || 0),
+          buyVolume1m: newBuyVolume - (dropped?.isBuy ? dropped.size : 0),
+          sellVolume1m: newSellVolume - (dropped && !dropped.isBuy ? dropped.size : 0),
           trades1m: newTradesCount - 1,
         };
       }
@@ -79,7 +83,8 @@ export const useTradesStore = create<TradesState>((set) => ({
       return {
         rawTradesQueue: newQueue,
         aggregatedTrades: agg,
-        volume1m: newVolume,
+        buyVolume1m: newBuyVolume,
+        sellVolume1m: newSellVolume,
         trades1m: newTradesCount,
       };
     });
@@ -90,19 +95,25 @@ export const useTradesStore = create<TradesState>((set) => ({
     const threshold = now - 60000; // 60 seconds ago
 
     set((state) => {
-      let droppedVolume = 0;
+      let droppedBuyVolume = 0;
+      let droppedSellVolume = 0;
       let dropCount = 0;
       const q = state.rawTradesQueue;
       
       while (dropCount < q.length && q[dropCount].timestamp < threshold) {
-        droppedVolume += q[dropCount].size;
+        if (q[dropCount].isBuy) {
+          droppedBuyVolume += q[dropCount].size;
+        } else {
+          droppedSellVolume += q[dropCount].size;
+        }
         dropCount++;
       }
 
       if (dropCount > 0) {
         return {
           rawTradesQueue: q.slice(dropCount),
-          volume1m: state.volume1m - droppedVolume,
+          buyVolume1m: state.buyVolume1m - droppedBuyVolume,
+          sellVolume1m: state.sellVolume1m - droppedSellVolume,
           trades1m: state.trades1m - dropCount,
         };
       }
@@ -115,7 +126,8 @@ export const useTradesStore = create<TradesState>((set) => ({
     set({
       rawTradesQueue: [],
       aggregatedTrades: [],
-      volume1m: 0,
+      buyVolume1m: 0,
+      sellVolume1m: 0,
       trades1m: 0,
     });
   }
