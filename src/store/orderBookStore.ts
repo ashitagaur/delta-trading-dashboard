@@ -10,6 +10,7 @@ interface OrderBookState {
 
   updateOrderBook: (msg: OrderBookMessage) => void;
   setGroupTick: (tick: number) => void;
+  reset: (defaultGroupTick: number) => void;
 }
 
 export const useOrderBookStore = create<OrderBookState>((set, get) => ({
@@ -35,7 +36,8 @@ export const useOrderBookStore = create<OrderBookState>((set, get) => ({
   },
 
   setGroupTick: (tick: number) => {
-    // Only updates the config. The next incoming snapshot will naturally apply it.
     set({ groupTick: tick });
-  }
+  },
+
+  reset: (defaultGroupTick: number) => set({ bids: [], asks: [], metrics: null, groupTick: defaultGroupTick })
 }));

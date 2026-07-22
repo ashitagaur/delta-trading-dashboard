@@ -3,8 +3,7 @@ import { useMarketStore } from '../../store/marketStore';
 import { PanelPlaceholder } from '../Shared/PanelPlaceholder';
 import { OrderBookRow } from './OrderBookRow';
 import { OrderBookMetrics } from './OrderBookMetrics';
-
-const GROUP_OPTIONS = [1, 5, 10, 50, 100, 500];
+import { SYMBOL_CONFIG } from '../../constants/market';
 
 export function OrderBookPanel() {
   const status = useMarketStore((state) => state.connectionStatus);
@@ -12,7 +11,10 @@ export function OrderBookPanel() {
   
   const { bids, asks, metrics, groupTick, setGroupTick } = useOrderBookStore();
 
-  const isReady = status === 'connected' && bids.length > 0;
+  const config = SYMBOL_CONFIG[focusedSymbol];
+  const baseCurrency = focusedSymbol.replace('USD', '');
+
+  const isReady = status === 'connected' && bids.length > 0 && asks.length > 0;
 
   // Asks are sorted ascending (lowest price first) in the store.
   // We want to render them descending so the lowest ask is at the bottom (near the spread).
@@ -23,25 +25,23 @@ export function OrderBookPanel() {
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-gray-800 shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-gray-200 font-bold">Order Book</span>
-          <span className="text-gray-400">—</span>
-          <span className="text-gray-200 font-bold">{focusedSymbol}</span>
-          <span className="bg-yellow-500/20 text-yellow-500 text-[9px] px-1.5 py-0.5 rounded font-bold ml-1 tracking-wider">LIVE</span>
+          <span className="text-gray-200 font-bold">Order Book — {focusedSymbol}</span>
+          <span className="bg-yellow-500/20 text-yellow-500 text-[10px] font-bold px-1.5 py-0.5 rounded ml-2">LIVE</span>
         </div>
         
-        <div className="flex items-center gap-1 text-[10px]">
-          <span className="text-gray-500 mr-1">Group:</span>
-          {GROUP_OPTIONS.map(val => (
+        <div className="flex items-center gap-2">
+          <span className="text-gray-500 text-xs mr-1">Group:</span>
+          {config.groupingOptions.map((tick) => (
             <button
-              key={val}
-              onClick={() => setGroupTick(val)}
-              className={`px-1.5 py-0.5 rounded transition-colors ${
-                groupTick === val 
-                  ? 'bg-blue-500/20 text-blue-400 font-bold' 
-                  : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+              key={tick}
+              onClick={() => setGroupTick(tick)}
+              className={`px-1 rounded text-xs transition-colors ${
+                groupTick === tick 
+                  ? 'bg-[#2b313f] text-blue-400 font-bold' 
+                  : 'text-gray-500 hover:text-gray-300'
               }`}
             >
-              {val}
+              {tick}
             </button>
           ))}
         </div>
@@ -54,9 +54,9 @@ export function OrderBookPanel() {
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Table Headers */}
-          <div className="flex justify-between px-2 py-1 text-gray-500 text-[10px] shrink-0 border-b border-gray-800">
-            <span className="w-1/3 text-left">Total (BTC)</span>
-            <span className="w-1/3 text-center">Size (BTC)</span>
+          <div className="flex justify-between px-2 py-1 text-gray-500 text-[10px] border-b border-gray-800 shrink-0">
+            <span className="w-1/3 text-left">Total ({baseCurrency})</span>
+            <span className="w-1/3 text-center">Size ({baseCurrency})</span>
             <span className="w-1/3 text-right">Price (USD)</span>
           </div>
 

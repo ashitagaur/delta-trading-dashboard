@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { SymbolId } from '../types/market';
+import { SYMBOL_CONFIG } from '../constants/market';
 import { WebSocketManager, ConnectionStatus } from '../services/WebSocketManager';
 import { useTradesStore } from './tradesStore';
+import { useOrderBookStore } from './orderBookStore';
 
 interface MarketState {
   focusedSymbol: SymbolId;
@@ -44,6 +46,7 @@ export const useMarketStore = create<MarketState>((set, get) => ({
     wsManager.unsubscribe('all_trades', [current]);
 
     useTradesStore.getState().reset();
+    useOrderBookStore.getState().reset(SYMBOL_CONFIG[symbol].defaultGrouping);
 
     set({ focusedSymbol: symbol });
 

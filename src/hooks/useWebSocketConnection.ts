@@ -21,11 +21,15 @@ export function useWebSocketConnection() {
         setConnectionStatus(status);
       },
       (msg) => {
+        const currentSymbol = useMarketStore.getState().focusedSymbol;
+
         if (msg.type === 'v2/ticker') {
           updateTicker(msg);
         } else if (msg.type === 'l2_orderbook') {
+          if (msg.symbol !== currentSymbol) return;
           updateOrderBook(msg as OrderBookMessage);
         } else if (msg.type === 'all_trades') {
+          if (msg.symbol !== currentSymbol) return;
           addTrade(msg as TradeMessage);
         }
       }

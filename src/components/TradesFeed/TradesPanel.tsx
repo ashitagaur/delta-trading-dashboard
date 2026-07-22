@@ -9,6 +9,7 @@ import { formatSize } from '../../utils/format';
 export function TradesPanel() {
   const status = useMarketStore((state) => state.connectionStatus);
   const focusedSymbol = useMarketStore((state) => state.focusedSymbol);
+  const baseCurrency = focusedSymbol.replace('USD', '');
   
   const { aggregatedTrades, buyVolume1m, sellVolume1m, trades1m } = useTradesStore();
 
@@ -64,7 +65,7 @@ export function TradesPanel() {
             </div>
             <div className="flex flex-col items-end">
               <span className="text-gray-500 text-[10px]">Avg Size</span>
-              <span className="text-gray-200 font-mono text-xs font-bold">{formatSize(avgSize)} BTC</span>
+              <span className="text-gray-200 font-mono text-xs font-bold">{formatSize(avgSize)} {baseCurrency}</span>
             </div>
           </div>
 
@@ -72,7 +73,7 @@ export function TradesPanel() {
           <div className="flex justify-between px-2 py-1 text-gray-500 text-[10px] border-b border-gray-800 shrink-0">
             <span className="w-1/3 text-left">Time</span>
             <span className="w-1/3 text-center">Price (USD)</span>
-            <span className="w-1/3 text-right">Size (BTC)</span>
+            <span className="w-1/3 text-right">Size ({baseCurrency})</span>
           </div>
 
           {/* Trades Feed */}
