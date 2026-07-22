@@ -502,3 +502,197 @@ The objective is not to produce the maximum amount of:
 * reasoning
 
 The objective is to produce the smallest high-quality solution that completely satisfies the requirement, is understandable by another engineer, and has been properly verified.
+
+---
+
+# Frontend Engineering Guidelines
+
+Follow these standards across all implementation phases.
+
+## React
+
+* Use plain named function components. Do not use `React.FC`.
+* Do not import `React` unless required by the tooling.
+* Keep components small, focused, and responsibility-driven.
+* Keep page/layout components primarily responsible for composition.
+* Move business logic out of JSX into hooks, services, stores, or pure processing functions.
+* Avoid giant components and deeply nested JSX.
+* Extract reusable components only when reuse is real.
+* Prefer composition over overly configurable generic components.
+* Use semantic HTML and accessible interactions where appropriate.
+
+## TypeScript
+
+* Do not use `any` unless absolutely unavoidable and explicitly justified.
+* Prefer `unknown` for untrusted external data and narrow it safely.
+* Define meaningful domain-specific types.
+* Use discriminated unions for WebSocket messages and event types.
+* Prefer literal unions over arbitrary strings.
+* Avoid unnecessary type assertions.
+* Keep component props explicitly and clearly typed.
+* Reuse or derive existing types instead of duplicating them.
+
+## Architecture
+
+Maintain clear separation between:
+
+```text
+WebSocket transport
+→ message routing
+→ domain processing
+→ state management
+→ React rendering
+```
+
+Do not mix these responsibilities inside components.
+
+Recommended responsibilities:
+
+```text
+components/   reusable and presentational UI
+features/     feature-specific UI and logic
+hooks/        meaningful React-specific behavior
+services/     WebSocket and external integrations
+store/        shared application/domain state
+processing/   pure data transformation and aggregation
+types/        shared domain types
+config/       static configuration
+utils/        generic helpers
+styles/       shared styles and design tokens
+```
+
+Do not create folders or abstractions without a real responsibility.
+
+## State Management
+
+* Keep state local unless it genuinely needs to be shared.
+* Separate transient UI state from real-time domain data.
+* Avoid one large global state object.
+* Components should subscribe only to the exact state they need.
+* A ticker update must not cause unrelated order book or trades components to rerender.
+* Do not maintain multiple sources of truth.
+* Do not store derived state unless caching it provides a real performance benefit.
+
+## Real-Time Data
+
+* Maintain exactly one shared WebSocket connection.
+* Keep WebSocket transport independent from React.
+* Centralize subscription management and deduplicate subscriptions.
+* Separate incoming message frequency from UI rendering frequency.
+* Do not trigger React state updates for every high-frequency WebSocket message.
+* Bound all continuously growing collections.
+* Clean up subscriptions, timers, event listeners, and workers correctly.
+* Prevent stale data from a previously selected symbol from reaching the UI.
+* Restore active subscriptions after reconnection.
+
+## Hooks and Effects
+
+* Use custom hooks only for meaningful reusable behavior.
+* Use `useEffect` for synchronization with external systems, not for ordinary derived values.
+* Keep effects focused and dependency arrays correct.
+* Do not suppress hook lint rules to hide lifecycle problems.
+* Avoid chains where one effect exists only to trigger another.
+* Clean up every external side effect correctly.
+
+## Performance
+
+* Design correct render boundaries before adding memoization.
+* Do not add `useMemo`, `useCallback`, or `React.memo` by default.
+* Use memoization only when it solves an actual measured or obvious performance issue.
+* Avoid repeated parsing, sorting, aggregation, or transformation work inside render functions.
+* Perform expensive market-data transformations outside UI components.
+* Batch or throttle UI updates when incoming data exceeds useful paint frequency.
+* Keep lists and buffers bounded.
+* Use virtualization only when the rendered collection size justifies it.
+* Introduce Web Workers only when profiling or workload characteristics justify moving computation off the main thread.
+
+## Styling
+
+* Keep large styling definitions out of JSX.
+* Do not use long utility-class strings throughout components.
+* Use dedicated CSS or CSS Module files with clear, maintainable class names.
+* Keep component-specific styles close to their components.
+* Use shared CSS variables/design tokens for repeated colors, spacing, typography, borders, and sizing.
+* Avoid duplicated magic values.
+* Keep styling separate from application and domain logic.
+
+## Data Processing
+
+* Keep parsing, normalization, aggregation, calculations, and rendering separate.
+* Complex market-data processing must be implemented as pure, testable functions where possible.
+* Do not process order book or trade streams directly inside JSX.
+* Avoid mutating shared React state.
+* Make precision-sensitive calculations deterministic and testable.
+
+## Code Quality
+
+Avoid:
+
+* `React.FC`
+* `any`
+* giant components
+* giant hooks
+* business logic inside JSX
+* duplicated code
+* premature abstractions
+* unnecessary context providers
+* unnecessary dependencies
+* meaningless wrapper components
+* barrel files without clear value
+* commented-out code
+* dead code
+* vague naming
+
+Use clear domain-specific names.
+
+Prefer:
+
+* `focusedSymbol`
+* `connectionStatus`
+* `aggregateOrderBook`
+* `handleSymbolSelect`
+
+over vague names such as:
+
+* `data`
+* `item`
+* `handler`
+* `processStuff`
+
+## Testing
+
+Prioritize tests for behavior and complex logic:
+
+* message parsing
+* order book grouping
+* precision handling
+* cumulative calculations
+* spread and imbalance
+* trade aggregation
+* rolling statistics
+* subscription lifecycle
+* stale-data prevention
+* reconnect behavior
+
+Avoid meaningless snapshot tests.
+
+## Before Every Phase
+
+Before adding new code:
+
+1. Review the existing architecture and current implementation.
+2. Extend existing patterns consistently.
+3. Preserve clear module and component boundaries.
+4. Do not rewrite working code unnecessarily.
+5. Do not introduce a new architectural pattern without a clear reason.
+
+After implementation:
+
+1. Review the diff for unnecessary complexity.
+2. Check component responsibilities.
+3. Check TypeScript quality.
+4. Check cleanup and lifecycle behavior.
+5. Run lint, build, and relevant tests.
+6. Verify the feature against the real backend where applicable.
+
+Every phase should leave the codebase modular, maintainable, scalable, testable, and easy for another senior frontend engineer to understand.
