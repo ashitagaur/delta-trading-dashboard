@@ -15,10 +15,10 @@ describe('tickerStore', () => {
       ...msg1, symbol: 'ETHUSD', close: 200
     };
 
-    useTickerStore.getState().updateTicker(msg1);
+    useTickerStore.getState().updateTickers([msg1]);
     expect(useTickerStore.getState().tickers['BTCUSD']).toBe(msg1);
 
-    useTickerStore.getState().updateTicker(msg2);
+    useTickerStore.getState().updateTickers([msg2]);
     expect(useTickerStore.getState().tickers['BTCUSD']).toBe(msg1);
     expect(useTickerStore.getState().tickers['ETHUSD']).toBe(msg2);
   });

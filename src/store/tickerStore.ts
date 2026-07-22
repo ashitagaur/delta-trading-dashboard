@@ -5,19 +5,22 @@ interface TickerState {
   tickers: Partial<Record<SymbolId, TickerMessage>>;
   
   // Actions
-  updateTicker: (msg: TickerMessage) => void;
+  updateTickers: (msgs: TickerMessage[]) => void;
 }
 
 export const useTickerStore = create<TickerState>((set) => ({
   tickers: {},
 
-  updateTicker: (msg: TickerMessage) => set((state) => {
-    // To ensure O(1) rendering isolation, we only mutate the nested object reference.
+  updateTickers: (msgs: TickerMessage[]) => set((state) => {
+    if (msgs.length === 0) return state;
+    
+    const newTickers = { ...state.tickers };
+    for (const msg of msgs) {
+      newTickers[msg.symbol] = msg;
+    }
+    
     return {
-      tickers: {
-        ...state.tickers,
-        [msg.symbol]: msg
-      }
+      tickers: newTickers
     };
   }),
 }));

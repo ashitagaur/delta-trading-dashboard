@@ -83,8 +83,8 @@ export function TradesPanel() {
             onScroll={handleScroll}
             className="flex-1 overflow-y-auto custom-scrollbar flex flex-col pt-1 pb-1 relative"
           >
-            {aggregatedTrades.map((trade) => (
-              <TradesRow key={trade.id} trade={trade} symbol={focusedSymbol} />
+            {aggregatedTrades.map((trade, index) => (
+              <TradesRow key={index} trade={trade} symbol={focusedSymbol} />
             ))}
           </div>
 

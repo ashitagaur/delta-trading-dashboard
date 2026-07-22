@@ -5,16 +5,40 @@ import { useOrderBookStore } from '../store/orderBookStore';
 import { useTradesStore } from '../store/tradesStore';
 import { WebSocketManager } from '../services/WebSocketManager';
 import { SUPPORTED_SYMBOLS } from '../constants/market';
-import { OrderBookMessage, TradeMessage } from '../types/market';
+import { OrderBookMessage, TradeMessage, TickerMessage } from '../types/market';
 
 export function useWebSocketConnection() {
   const setConnectionStatus = useMarketStore(state => state.setConnectionStatus);
 
   useEffect(() => {
     const wsManager = WebSocketManager.getInstance();
-    const updateTicker = useTickerStore.getState().updateTicker;
-    const updateOrderBook = useOrderBookStore.getState().updateOrderBook;
-    const addTrade = useTradesStore.getState().addTrade;
+    
+    // --- Mutable Buffers ---
+    let latestOrderBookMsg: OrderBookMessage | null = null;
+    let tradesBuffer: TradeMessage[] = [];
+    let tickersBuffer: TickerMessage[] = [];
+
+    // --- Timed Flush Interval (100ms = 10 FPS) ---
+    // This dramatically reduces React reconciliations and Main Thread blocking
+    const flushInterval = setInterval(() => {
+      // 1. Flush Order Book (Snapshot, so we only need the latest)
+      if (latestOrderBookMsg) {
+        useOrderBookStore.getState().updateOrderBook(latestOrderBookMsg);
+        latestOrderBookMsg = null;
+      }
+      
+      // 2. Flush Trades (Batch insert)
+      if (tradesBuffer.length > 0) {
+        useTradesStore.getState().addTrades(tradesBuffer);
+        tradesBuffer = [];
+      }
+      
+      // 3. Flush Tickers (Batch update)
+      if (tickersBuffer.length > 0) {
+        useTickerStore.getState().updateTickers(tickersBuffer);
+        tickersBuffer = [];
+      }
+    }, 100);
 
     wsManager.setCallbacks(
       (status) => {
@@ -24,13 +48,13 @@ export function useWebSocketConnection() {
         const currentSymbol = useMarketStore.getState().focusedSymbol;
 
         if (msg.type === 'v2/ticker') {
-          updateTicker(msg);
+          tickersBuffer.push(msg as TickerMessage);
         } else if (msg.type === 'l2_orderbook') {
           if (msg.symbol !== currentSymbol) return;
-          updateOrderBook(msg as OrderBookMessage);
+          latestOrderBookMsg = msg as OrderBookMessage; // Overwrite intermediate snapshots
         } else if (msg.type === 'all_trades') {
           if (msg.symbol !== currentSymbol) return;
-          addTrade(msg as TradeMessage);
+          tradesBuffer.push(msg as TradeMessage);
         }
       }
     );
@@ -48,6 +72,7 @@ export function useWebSocketConnection() {
     wsManager.connect();
 
     return () => {
+      clearInterval(flushInterval); // Flawless cleanup
       wsManager.disconnect();
     };
   }, [setConnectionStatus]);

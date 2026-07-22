@@ -9,7 +9,7 @@ interface TradesState {
   sellVolume1m: number;
   trades1m: number;
 
-  addTrade: (msg: TradeMessage) => void;
+  addTrades: (msgs: TradeMessage[]) => void;
   pruneOldTrades: () => void;
   reset: () => void;
 }
@@ -21,46 +21,60 @@ export const useTradesStore = create<TradesState>((set) => ({
   sellVolume1m: 0,
   trades1m: 0,
 
-  addTrade: (msg: TradeMessage) => {
-    const tsMs = Math.floor(msg.timestamp / 1000); 
-    const price = parseFloat(msg.price);
-    const size = msg.size;
-    const isBuy = isBuyTrade(msg.buyer_role);
+  addTrades: (msgs: TradeMessage[]) => {
+    if (msgs.length === 0) return;
 
     set((state) => {
       // 1. Manage Raw Queue & Rolling Stats
-      const newQueue = [...state.rawTradesQueue, { size, timestamp: tsMs, isBuy }];
-      const newBuyVolume = state.buyVolume1m + (isBuy ? size : 0);
-      const newSellVolume = state.sellVolume1m + (!isBuy ? size : 0);
-      const newTradesCount = state.trades1m + 1;
+      let newBuyVolume = state.buyVolume1m;
+      let newSellVolume = state.sellVolume1m;
+      let newTradesCount = state.trades1m;
+      
+      const incomingRaw = msgs.map(msg => {
+        const isBuy = isBuyTrade(msg.buyer_role);
+        if (isBuy) newBuyVolume += msg.size;
+        else newSellVolume += msg.size;
+        newTradesCount++;
+        return { size: msg.size, timestamp: Math.floor(msg.timestamp / 1000), isBuy };
+      });
+      
+      const newQueue = [...state.rawTradesQueue, ...incomingRaw];
 
       // 2. Aggregation Logic
       const agg = [...state.aggregatedTrades];
-      let newlyAggregated = false;
-
-      if (agg.length > 0) {
-        const last = agg[0]; 
-        const timeDiff = tsMs - last.timestamp;
+      
+      for (const msg of msgs) {
+        const tsMs = Math.floor(msg.timestamp / 1000); 
+        const price = parseFloat(msg.price);
+        const size = msg.size;
+        const isBuy = isBuyTrade(msg.buyer_role);
         
-        // Same price, same direction, within 100ms
-        if (last.price === price && last.isBuy === isBuy && timeDiff <= 100) {
-          last.size += size;
-          last.count += 1;
-          last.isLarge = isLargeTrade(last.price, last.size);
-          newlyAggregated = true;
-        }
-      }
+        let newlyAggregated = false;
 
-      if (!newlyAggregated) {
-        agg.unshift({
-          id: `${msg.product_id}-${msg.timestamp}`,
-          price,
-          size,
-          isBuy,
-          isLarge: isLargeTrade(price, size),
-          timestamp: tsMs,
-          count: 1
-        });
+        if (agg.length > 0) {
+          const last = agg[0]; 
+          const timeDiff = tsMs - last.timestamp;
+          
+          // Same price, same direction, within 100ms
+          if (last.price === price && last.isBuy === isBuy && timeDiff <= 100) {
+            last.size += size;
+            last.count += 1;
+            last.isLarge = isLargeTrade(last.price, last.size);
+            newlyAggregated = true;
+          }
+        }
+
+        if (!newlyAggregated) {
+          agg.unshift({
+            id: `${msg.product_id}-${msg.timestamp}`,
+            price,
+            size,
+            isBuy,
+            isLarge: isLargeTrade(price, size),
+            timestamp: tsMs,
+            count: 1
+          });
+        }
       }
 
       // Bound UI trades to 50
@@ -68,16 +82,15 @@ export const useTradesStore = create<TradesState>((set) => ({
         agg.length = 50;
       }
 
-      // Hard memory bound for queue
+      // Hard memory bound for queue (drop older trades safely)
       if (newQueue.length > 5000) {
-        const dropped = newQueue.shift();
-        return {
-          rawTradesQueue: newQueue,
-          aggregatedTrades: agg,
-          buyVolume1m: newBuyVolume - (dropped?.isBuy ? dropped.size : 0),
-          sellVolume1m: newSellVolume - (dropped && !dropped.isBuy ? dropped.size : 0),
-          trades1m: newTradesCount - 1,
-        };
+        const dropCount = newQueue.length - 5000;
+        const dropped = newQueue.splice(0, dropCount);
+        for (const drop of dropped) {
+          if (drop.isBuy) newBuyVolume -= drop.size;
+          else newSellVolume -= drop.size;
+          newTradesCount--;
+        }
       }
 
       return {
