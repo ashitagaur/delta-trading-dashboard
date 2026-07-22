@@ -70,6 +70,23 @@ Visit `http://localhost:5173` in your browser.
 
 ## Architecture
 
+### Architecture in One Paragraph
+A pure TypeScript `WebSocketManager` ingests the high-frequency backend firehose and parses messages directly into lightweight, mutable JavaScript buffers. To prevent React from suffocating under 200+ renders per second, a strict `setInterval` loop flushes these buffers exactly once every 100ms (10 FPS) into four granular, domain-specific Zustand stores (`market`, `ticker`, `orderbook`, `trades`), which then selectively re-render heavily-memoized React components without causing Cumulative Layout Shift (CLS).
+
+```mermaid
+graph TD
+    A[Backend WebSocket] -->|1-20ms Firehose| B(WebSocketManager)
+    B -->|Parse & Buffer| C[(Mutable JS Buffers)]
+    C -->|100ms setInterval Flush| D[Zustand Stores]
+    D -->|Zustand Selectors| E(React UI Components)
+    
+    style A fill:#2d3748,stroke:#4a5568,color:#fff
+    style B fill:#3182ce,stroke:#2b6cb0,color:#fff
+    style C fill:#d69e2e,stroke:#b7791f,color:#fff
+    style D fill:#38a169,stroke:#2f855a,color:#fff
+    style E fill:#805ad5,stroke:#6b46c1,color:#fff
+```
+
 See [`docs/02-ARCHITECTURE.md`](./docs/02-ARCHITECTURE.md) for a detailed breakdown of component boundaries, state management, WebSocket lifecycle, and data processing pipelines.
 
 ## Performance
