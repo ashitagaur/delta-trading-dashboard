@@ -1,4 +1,4 @@
-# Delta Trading Dashboard
+# High-Frequency Crypto Trading Terminal
 
 A real-time, multi-symbol crypto trading dashboard built with React + TypeScript + Vite. It connects to a local WebSocket mock server and displays live order book data, recent trades, and ticker information across 6 symbols simultaneously.
 
@@ -68,11 +68,24 @@ Visit `http://localhost:5173` in your browser.
 
 ---
 
+## Development Workflow & AI Co-Piloting
+
+This application was engineered using a **human-led, AI-assisted workflow** where all strategic, technical, and architectural decisions were driven by the senior engineer.
+
+- **Core Engineering & Direct Implementation**: System architecture design, render isolation boundaries, WebSocket buffer scheduling (100ms timed flush loop), zero-CLS DOM reconciliation strategy, precision math utilities, and >50% of direct code authoring were executed by the senior engineer.
+- **Debugging & Bug Fixes**: All runtime defect resolution, root-cause diagnosis (CLS regression, flexbox layout overflows, variable scoping errors), and performance fixes were analyzed and implemented directly by the senior engineer.
+- **What AI Assisted With**: Scaffolding UI component boilerplates, generating unit test cases for helper utilities, formatting Markdown documentation, and executing build/lint verification commands.
+- **What AI Did NOT Do**:
+  - **Unprompted Source Investigation**: The AI did not inspect the backend autonomously; I explicitly directed it to analyze `config.js` and stream generators (`l2_orderbook.js`, `all_trades.js`, `ticker.js`) to uncover exact WebSocket protocols, payload structures, and message frequencies.
+  - **Scope & Priority Triage**: When AI surfaced exhaustive lists of potential edge cases, I triaged them—filtering critical operational requirements from optional polish—to keep the execution plan tightly focused.
+  - **Architectural & Performance Tradeoffs**: Key engineering decisions—such as adopting lightweight Zustand slices over Redux, choosing a 100ms main-thread flush over Web Worker serialization overhead, and utilizing integer-scaled tick grouping—were evaluated and decided by me based on empirical performance tradeoffs.
+  - **Autonomous Bug Fixing**: The AI did not diagnose or fix complex runtime or layout defects without explicit human direction and root-cause analysis.
+
+---
+
 ## Architecture & System Design
 
 See [`docs/02-ARCHITECTURE.md`](./docs/02-ARCHITECTURE.md) for a detailed breakdown of component boundaries, state management, WebSocket lifecycle, and data processing pipelines.
-
----
 
 ### High-Level Design (HLD)
 
@@ -131,164 +144,7 @@ The system is designed around a **Single-Connection, Buffered Ingestion & Isolat
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<details>
-<summary>Click to view Mermaid Diagram syntax</summary>
-
-```mermaid
-graph TD
-    subgraph External System
-        WS["WebSocket Server (ws://localhost:8080)"]
-    end
-
-    subgraph Client Application
-        subgraph Network & Ingestion Layer
-            WM["WebSocketManager (Singleton)"]
-            RECON["Reconnection & Backoff Engine"]
-            REG["Subscription Registry"]
-        end
-
-        subgraph Ingestion & Buffering Engine
-            BUF["Mutable In-Memory Buffers\n(100ms Timed Flush)"]
-        end
-
-        subgraph State Management Layer (Zustand Stores)
-            MKT["useMarketStore\n(Focused Symbol & Status)"]
-            TCK["useTickerStore\n(All Symbols Ticker Data)"]
-            OB["useOrderBookStore\n(Bids, Asks, Metrics)"]
-            TRD["useTradesStore\n(Aggregated Trades, 1m Stats)"]
-        end
-
-        subgraph Presentation & UI Layer
-            HDR["GlobalHeader\n(Status Indicator)"]
-            TBAR["TickerBar\n(Isolated Ticker Cards)"]
-            OBP["OrderBookPanel\n(Memoized Rows & Depth Bars)"]
-            TP["TradesPanel\n(Index-Keyed Zero-CLS Rows)"]
-            OEP["OrderEntryPanel\n(Form Controls)"]
-        end
-    end
-
-    WS <-->|WebSockets JSON Stream| WM
-    WM -->|Queue Messages| BUF
-    BUF -->|Batch Flush 10 FPS| TCK
-    BUF -->|Batch Flush 10 FPS| OB
-    BUF -->|Batch Flush 10 FPS| TRD
-    WM -->|Update Status| MKT
-
-    MKT -->|Subscribe / Unsubscribe| WM
-    MKT --> HDR
-    TCK --> TBAR
-    OB --> OBP
-    TRD --> TP
-```
-
-</details>
-
 ---
-
-### Low-Level Design (LLD) & Data Flow Architecture
-
-This diagram illustrates the message ingestion lifecycle, batch processing transformations, store updates, and symbol switching workflows.
-
-```text
-┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                     LOW-LEVEL DATA PIPELINE (LLD)                                      │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-
-  [1. USER SYMBOL SWITCHING FLOW]
-  User Click (e.g. ETHUSD)
-     │
-     ▼
-  useMarketStore.setFocusedSymbol('ETHUSD')
-     ├─────────────────────────────────────────┐
-     │ 1. Unsubscribe Old                     │ 2. Subscribe New
-     ▼                                         ▼
-  WebSocketManager.unsubscribe('BTCUSD')   WebSocketManager.subscribe('ETHUSD')
-     │                                         │
-     ├─────────────────────────────────────────┤
-     │ 3. Reset Stores immediately             │ 4. Clear old data from UI
-     ▼                                         ▼
-  useOrderBookStore.reset()                useTradesStore.reset()
-
-──────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-  [2. HIGH-FREQUENCY INGESTION & TRANSFORMATION PIPELINE]
-
-  Raw WebSocket Payload (1-5ms interval)
-     │
-     ▼
-  WebSocketManager.onmessage()
-     │
-     ▼
-  useWebSocketConnection (Mutable In-Memory Buffers)
-     ├── latestOrderBookMsg = msg (Overwrites, keeps latest)
-     ├── tradesBuffer.push(msg)   (Appends)
-     └── tickersBuffer.push(msg)  (Appends)
-     │
-     │ [100ms Timed Flush Engine (setInterval @ 10 FPS)]
-     ▼
-  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │ PARALLEL BATCH PROCESSING                                                                        │
-  │                                                                                                  │
-  │  OrderBook Branch:                                                                               │
-  │  latestOrderBookMsg ──► groupOrderBook(tickSize) ──► processCumulativeDepths() ──► calculateMetrics()│
-  │                                                                                     │            │
-  │                                                                                     ▼            │
-  │                                                                          useOrderBookStore       │
-  │                                                                                     │            │
-  │  Trades Feed Branch:                                                                │            │
-  │  tradesBuffer[] ──► 100ms Trade Merging (Same price/direction) ──► Bound 50 Rows ─────┤            │
-  │                 └──► 60s Rolling Volume Queue (Max 5,000) ──────► useTradesStore ◄──┘            │
-  │                                                                                                  │
-  │  Ticker Branch:                                                                                  │
-  │  tickersBuffer[] ──► updateTickers(batch) ─────────────────────────► useTickerStore             │
-  └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │ REACT UI RENDER ISOLATION LAYER                                                                  │
-  │                                                                                                  │
-  │  • TickerCard: Selects only state.tickers['ETHUSD'] (Prevents global re-renders)                 │
-  │  • OrderBookRow: React.memo with custom areEqual (Renders only modified price levels)            │
-  │  • TradesRow: Index-based React keys (DOM nodes locked in place -> CLS = 0.00)                   │
-  └──────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-<details>
-<summary>Click to view Sequence Diagram syntax</summary>
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant WS as WebSocket Server
-    participant WSM as WebSocketManager
-    participant Hook as useWebSocketConnection
-    participant Store as Zustand Stores
-    participant Util as Pure Utils Processing
-    participant UI as React UI Components
-
-    Note over WS, WSM: 1. Connection & Symbol Subscription
-    UI->>Store: Click Symbol (e.g. ETHUSD)
-    Store->>WSM: setFocusedSymbol('ETHUSD')
-    WSM->>WS: unsubscribe('l2_orderbook', ['BTCUSD'])
-    WSM->>Store: reset OrderBook & Trades Stores
-    WSM->>WS: subscribe('l2_orderbook', ['ETHUSD'])
-
-    Note over WS, Hook: 2. Message Ingestion & Mutable Buffering
-    WS->>WSM: Send raw JSON payload (1-5ms interval)
-    WSM->>Hook: Parse JSON & Push to Mutable Buffer (O(1))
-
-    Note over Hook, UI: 3. Timed Batch Flush & Render Engine (Every 100ms / 10 FPS)
-    Hook->>Util: Group OrderBook & Calc Depths (groupOrderBook)
-    Util-->>Hook: Processed Bids/Asks & Metrics
-    Hook->>Store: Batch updateOrderBook(snapshot)
-    Hook->>Store: Batch addTrades(tradesBuffer)
-    Hook->>Store: Batch updateTickers(tickersBuffer)
-
-    Store->>UI: Granular Selector Re-render
-    Note over UI: React.memo & Index-Keyed Rows ensure 0 CLS & 60 FPS
-```
-
-</details>
 
 ## Performance
 
@@ -301,6 +157,10 @@ See [`docs/05-TESTING.md`](./docs/05-TESTING.md) for the test structure, what is
 ## Tradeoffs
 
 See [`docs/06-TRADEOFFS.md`](./docs/06-TRADEOFFS.md) for explicit design decisions including the CPU work placement tradeoff, CLS root cause analysis, and a scaling discussion for significantly more symbols.
+
+## Development Workflow & Prompt Log
+
+See [`docs/07-PROMPT-ENGINEERING.md`](./docs/07-PROMPT-ENGINEERING.md) for the complete prompt-by-prompt log of how this project was developed using AI co-piloting, including human engineering decisions, prompt history, and retrospectives.
 
 ---
 
