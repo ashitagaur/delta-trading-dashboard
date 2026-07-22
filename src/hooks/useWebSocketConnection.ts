@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { useMarketStore } from '../store/marketStore';
 import { useTickerStore } from '../store/tickerStore';
+import { useOrderBookStore } from '../store/orderBookStore';
 import { WebSocketManager } from '../services/WebSocketManager';
 import { SUPPORTED_SYMBOLS } from '../constants/market';
+import { OrderBookMessage } from '../types/market';
 
 export function useWebSocketConnection() {
   const setConnectionStatus = useMarketStore(state => state.setConnectionStatus);
@@ -10,6 +12,7 @@ export function useWebSocketConnection() {
   useEffect(() => {
     const wsManager = WebSocketManager.getInstance();
     const updateTicker = useTickerStore.getState().updateTicker;
+    const updateOrderBook = useOrderBookStore.getState().updateOrderBook;
 
     wsManager.setCallbacks(
       (status) => {
@@ -18,6 +21,8 @@ export function useWebSocketConnection() {
       (msg) => {
         if (msg.type === 'v2/ticker') {
           updateTicker(msg);
+        } else if (msg.type === 'l2_orderbook') {
+          updateOrderBook(msg as OrderBookMessage);
         }
       }
     );
