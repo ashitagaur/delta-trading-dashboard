@@ -35,12 +35,13 @@ export function TradesPanel() {
   };
 
   return (
-    <section className="flex-1 w-full bg-[#0b0e11] flex flex-col h-full min-w-0 border-t lg:border-t-0 border-gray-800">
+    <section className="flex-1 w-full bg-[#0b0e11] flex flex-col h-full min-w-0 min-h-0">
       {/* Header */}
       <div className="flex items-center justify-between p-3 border-b border-gray-800 shrink-0">
-        <span className="text-gray-200 font-bold">Recent Trades — {focusedSymbol}</span>
-        <span className="text-gray-500 text-xs flex items-center gap-2">
-          Large trade ≥ <span className="text-gray-300 font-mono bg-gray-800 px-1 rounded">$10,000</span>
+        <span className="text-gray-200 font-bold text-sm lg:text-base whitespace-nowrap">Recent Trades — {focusedSymbol}</span>
+        <span className="text-gray-500 text-[10px] lg:text-xs flex items-center gap-1 lg:gap-2 ml-2">
+          <span className="hidden sm:inline">Large trade ≥</span><span className="sm:hidden">≥</span>
+          <span className="text-gray-300 font-mono bg-gray-800 px-1 rounded">$10k</span>
         </span>
       </div>
 
@@ -51,21 +52,21 @@ export function TradesPanel() {
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {/* Stats Header */}
-          <div className="flex items-center justify-between px-3 py-2 bg-gray-900/30 border-b border-gray-800 shrink-0">
-            <div className="flex flex-col">
-              <span className="text-gray-500 text-[10px]">1m Volume</span>
-              <div className="flex items-baseline gap-2">
-                <span className="text-green-500 font-mono text-xs font-bold">{formatSize(buyVolume1m)} <span className="text-[10px] font-sans font-normal">buy</span></span>
-                <span className="text-red-500 font-mono text-xs font-bold">{formatSize(sellVolume1m)} <span className="text-[10px] font-sans font-normal">sell</span></span>
+          <div className="flex items-center justify-between px-2 lg:px-3 py-2 bg-gray-900/30 border-b border-gray-800 shrink-0 overflow-hidden">
+            <div className="flex flex-col min-w-0">
+              <span className="text-gray-500 text-[10px] truncate">1m Volume</span>
+              <div className="flex items-baseline gap-1 lg:gap-2">
+                <span className="text-green-500 font-mono text-[10px] lg:text-xs font-bold truncate">{formatSize(buyVolume1m)} <span className="text-[9px] lg:text-[10px] font-sans font-normal">buy</span></span>
+                <span className="text-red-500 font-mono text-[10px] lg:text-xs font-bold truncate">{formatSize(sellVolume1m)} <span className="text-[9px] lg:text-[10px] font-sans font-normal">sell</span></span>
               </div>
             </div>
-            <div className="flex flex-col items-center">
-              <span className="text-gray-500 text-[10px]">1m Trades</span>
-              <span className="text-gray-200 font-mono text-xs font-bold">{trades1m.toLocaleString()}</span>
+            <div className="flex flex-col items-center min-w-0 px-2">
+              <span className="text-gray-500 text-[10px] truncate">1m Trades</span>
+              <span className="text-gray-200 font-mono text-[10px] lg:text-xs font-bold truncate">{trades1m.toLocaleString()}</span>
             </div>
-            <div className="flex flex-col items-end">
-              <span className="text-gray-500 text-[10px]">Avg Size</span>
-              <span className="text-gray-200 font-mono text-xs font-bold">{formatSize(avgSize)} {baseCurrency}</span>
+            <div className="flex flex-col items-end min-w-0">
+              <span className="text-gray-500 text-[10px] truncate">Avg Size</span>
+              <span className="text-gray-200 font-mono text-[10px] lg:text-xs font-bold truncate">{formatSize(avgSize)} {baseCurrency}</span>
             </div>
           </div>
 

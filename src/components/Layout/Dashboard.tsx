@@ -11,7 +11,7 @@ export function Dashboard() {
       <TickerBar />
       
       {/* Main Content Area */}
-      <main className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+      <main className="flex-1 overflow-hidden flex flex-row">
         <OrderBookPanel />
         <TradesPanel />
       </main>
