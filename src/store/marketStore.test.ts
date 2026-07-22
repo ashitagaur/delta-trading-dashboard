@@ -47,10 +47,16 @@ describe('marketStore', () => {
     
     useMarketStore.getState().setFocusedSymbol('ETHUSD');
     
-    // Should unsubscribe from BTCUSD (previous)
-    expect(wsMock.unsubscribe).toHaveBeenCalledWith('v2/ticker', ['BTCUSD']);
+    // Should unsubscribe from BTCUSD (previous) on specific channels
+    expect(wsMock.unsubscribe).toHaveBeenCalledWith('l2_orderbook', ['BTCUSD']);
+    expect(wsMock.unsubscribe).toHaveBeenCalledWith('all_trades', ['BTCUSD']);
     
     // Should subscribe to ETHUSD (new)
-    expect(wsMock.subscribe).toHaveBeenCalledWith('v2/ticker', ['ETHUSD']);
+    expect(wsMock.subscribe).toHaveBeenCalledWith('l2_orderbook', ['ETHUSD']);
+    expect(wsMock.subscribe).toHaveBeenCalledWith('all_trades', ['ETHUSD']);
+
+    // Should NOT unsubscribe/subscribe to v2/ticker (handled on mount for all symbols)
+    expect(wsMock.unsubscribe).not.toHaveBeenCalledWith('v2/ticker', expect.anything());
+    expect(wsMock.subscribe).not.toHaveBeenCalledWith('v2/ticker', expect.anything());
   });
 });

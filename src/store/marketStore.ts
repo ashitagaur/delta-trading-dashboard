@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { SymbolId } from '../types/market';
 import { WebSocketManager, ConnectionStatus } from '../services/WebSocketManager';
-import { STATIC_CHANNELS } from '../constants/market';
 
 interface MarketState {
   focusedSymbol: SymbolId;
@@ -38,15 +37,15 @@ export const useMarketStore = create<MarketState>((set, get) => ({
 
     const wsManager = WebSocketManager.getInstance();
     
-    STATIC_CHANNELS.forEach(channel => {
-      wsManager.unsubscribe(channel, [current]);
-    });
+    // Only l2_orderbook and all_trades depend on the focused symbol.
+    // v2/ticker is subscribed to ALL symbols simultaneously.
+    wsManager.unsubscribe('l2_orderbook', [current]);
+    wsManager.unsubscribe('all_trades', [current]);
 
     set({ focusedSymbol: symbol });
 
-    STATIC_CHANNELS.forEach(channel => {
-      wsManager.subscribe(channel, [symbol]);
-    });
+    wsManager.subscribe('l2_orderbook', [symbol]);
+    wsManager.subscribe('all_trades', [symbol]);
   },
 
   setConnectionStatus: (status: ConnectionStatus) => set({ connectionStatus: status }),
