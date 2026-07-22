@@ -4,9 +4,9 @@ import { TradesPanel } from '../TradesFeed/TradesPanel';
 
 export function Dashboard() {
   return (
-    <div className="h-full bg-bg-base text-text-main flex flex-col font-sans text-xs">
+    <div className="h-screen w-full bg-bg-base text-text-main flex flex-col font-sans text-xs">
       <TickerBar />
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden overflow-y-auto lg:overflow-y-hidden">
         <OrderBookPanel />
         <TradesPanel />
       </main>

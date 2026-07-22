@@ -46,7 +46,7 @@ describe('WebSocketManager', () => {
     expect(statusFn).toHaveBeenCalledWith('connecting');
     
     // Simulate open
-    wsMock.onopen();
+    wsMock.onopen?.();
     expect(statusFn).toHaveBeenCalledWith('connected');
   });
 
@@ -55,10 +55,10 @@ describe('WebSocketManager', () => {
     manager.setCallbacks(statusFn, vi.fn());
     
     manager.connect();
-    wsMock.onopen(); // connected
+    wsMock.onopen?.(); // connected
     
     // Simulate drop
-    wsMock.onclose();
+    wsMock.onclose?.();
     expect(statusFn).toHaveBeenCalledWith('reconnecting');
     
     // First backoff is 1000ms
@@ -69,7 +69,7 @@ describe('WebSocketManager', () => {
 
   it('deduplicates subscriptions', () => {
     manager.connect();
-    wsMock.onopen();
+    wsMock.onopen?.();
     
     manager.subscribe('v2/ticker', ['BTCUSD']);
     expect(wsMock.send).toHaveBeenCalledTimes(1);
@@ -94,10 +94,10 @@ describe('WebSocketManager', () => {
     manager.setCallbacks(vi.fn(), msgFn);
     
     manager.connect();
-    wsMock.onopen();
+    wsMock.onopen?.();
     
     const validMessage = { type: 'v2/ticker', symbol: 'BTCUSD' };
-    wsMock.onmessage({ data: JSON.stringify(validMessage) });
+    wsMock.onmessage?.({ data: JSON.stringify(validMessage) });
     
     expect(msgFn).toHaveBeenCalledWith(validMessage);
   });
