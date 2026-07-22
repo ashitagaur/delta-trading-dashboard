@@ -2,9 +2,10 @@ import { useEffect } from 'react';
 import { useMarketStore } from '../store/marketStore';
 import { useTickerStore } from '../store/tickerStore';
 import { useOrderBookStore } from '../store/orderBookStore';
+import { useTradesStore } from '../store/tradesStore';
 import { WebSocketManager } from '../services/WebSocketManager';
 import { SUPPORTED_SYMBOLS } from '../constants/market';
-import { OrderBookMessage } from '../types/market';
+import { OrderBookMessage, TradeMessage } from '../types/market';
 
 export function useWebSocketConnection() {
   const setConnectionStatus = useMarketStore(state => state.setConnectionStatus);
@@ -13,6 +14,7 @@ export function useWebSocketConnection() {
     const wsManager = WebSocketManager.getInstance();
     const updateTicker = useTickerStore.getState().updateTicker;
     const updateOrderBook = useOrderBookStore.getState().updateOrderBook;
+    const addTrade = useTradesStore.getState().addTrade;
 
     wsManager.setCallbacks(
       (status) => {
@@ -23,6 +25,8 @@ export function useWebSocketConnection() {
           updateTicker(msg);
         } else if (msg.type === 'l2_orderbook') {
           updateOrderBook(msg as OrderBookMessage);
+        } else if (msg.type === 'all_trades') {
+          addTrade(msg as TradeMessage);
         }
       }
     );
