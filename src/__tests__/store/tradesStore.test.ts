@@ -16,11 +16,12 @@ describe('tradesStore', () => {
   ): TradeMessage => ({
     type: 'all_trades',
     symbol: 'BTCUSD',
-    product_id: 'BTCUSD',
+    product_id: 1,
     timestamp,
     price,
     size,
     buyer_role,
+    seller_role: buyer_role === 'maker' ? 'taker' : 'maker',
   });
 
   it('aggregates trades with same price, direction, within 100ms', () => {
