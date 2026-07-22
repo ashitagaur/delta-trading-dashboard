@@ -2,6 +2,7 @@ import { GlobalHeader } from './GlobalHeader';
 import { TickerBar } from '../TickerBar/TickerBar';
 import { OrderBookPanel } from '../OrderBook/OrderBookPanel';
 import { TradesPanel } from '../TradesFeed/TradesPanel';
+import { Footer } from './Footer';
 
 export function Dashboard() {
   return (
@@ -14,6 +15,8 @@ export function Dashboard() {
         <OrderBookPanel />
         <TradesPanel />
       </main>
+
+      <Footer />
     </div>
   );
 }
