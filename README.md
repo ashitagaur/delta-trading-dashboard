@@ -68,26 +68,227 @@ Visit `http://localhost:5173` in your browser.
 
 ---
 
-## Architecture
+## Architecture & System Design
 
-### Architecture in One Paragraph
-A pure TypeScript `WebSocketManager` ingests the high-frequency backend firehose and parses messages directly into lightweight, mutable JavaScript buffers. To prevent React from suffocating under 200+ renders per second, a strict `setInterval` loop flushes these buffers exactly once every 100ms (10 FPS) into four granular, domain-specific Zustand stores (`market`, `ticker`, `orderbook`, `trades`), which then selectively re-render heavily-memoized React components without causing Cumulative Layout Shift (CLS).
+See [`docs/02-ARCHITECTURE.md`](./docs/02-ARCHITECTURE.md) for a detailed breakdown of component boundaries, state management, WebSocket lifecycle, and data processing pipelines.
+
+---
+
+### High-Level Design (HLD)
+
+The system is designed around a **Single-Connection, Buffered Ingestion & Isolated Render** paradigm. High-frequency WebSocket data is decoupled from React's rendering pipeline via mutable buffers and a 100ms flush loop.
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 EXTERNAL SYSTEM                                          │
+│                                                                                          │
+│                  ┌──────────────────────────────────────────────────┐                    │
+│                  │  WebSocket Server (ws://localhost:8080)          │                    │
+│                  │  - Broadcasts tickers for 6 symbols              │                    │
+│                  │  - Streams L2 Order Book & Trades for active sym │                    │
+│                  └────────────────────────┬─────────────────────────┘                    │
+└───────────────────────────────────────────┼──────────────────────────────────────────────┘
+                                            │ Full-Duplex WebSockets (JSON Streams)
+                                            ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                                CLIENT APPLICATION                                        │
+│                                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ NETWORK & INGESTION LAYER                                                          │  │
+│  │  ┌────────────────────────┐   ┌───────────────────────────┐   ┌─────────────────┐ │  │
+│  │  │ WebSocketManager       │   │ Reconnection Engine       │   │ Subscription    │ │  │
+│  │  │ (Pure TS Singleton)    ├──►│ (Exp Backoff 1s..30s)     │   │ Registry Map    │ │  │
+│  │  └───────────┬────────────┘   └───────────────────────────┘   └─────────────────┘ │  │
+│  └──────────────┼─────────────────────────────────────────────────────────────────────┘  │
+│                 │ Synchronous Non-Blocking Push (O(1))                                   │
+│                 ▼                                                                        │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ INGESTION & BUFFERING ENGINE (100ms Timed Flush Loop)                              │  │
+│  │  ┌──────────────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │  mutable buffers: [latestOrderBookMsg, tradesBuffer[], tickersBuffer[]]      │  │  │
+│  │  └──────────────────────────────────────┬───────────────────────────────────────┘  │  │
+│  └─────────────────────────────────────────┼──────────────────────────────────────────┘  │
+│                                            │ Batch Flush (10 FPS / 100ms)                │
+│                                            ▼                                             │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ STATE MANAGEMENT LAYER (Zustand Stores)                                            │  │
+│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌─────────────┐ │  │
+│  │  │ useMarketStore   │  │ useTickerStore   │  │ useOrderBookStore│  │useTradesStore│ │  │
+│  │  │ (Focused Symbol) │  │ (All 6 Symbols)  │  │ (Grouped Bids/Ask│  │(Agg Trades &│ │  │
+│  │  │ (Connection State│  │                  │  │  Spread Metrics) │  │ 1m Volume)  │ │  │
+│  │  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘  └──────┬──────┘ │  │
+│  └───────────┼─────────────────────┼─────────────────────┼───────────────────┼────────┘  │
+│              │ Selective           │ Granular            │ Memoized          │ Index     │
+│              │ Subscription        │ Selectors           │ Deep Bars         │ Zero-CLS  │
+│              ▼                     ▼                     ▼                   ▼           │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ PRESENTATION & UI LAYER (React 18 Component Tree)                                  │  │
+│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌─────────────┐ │  │
+│  │  │ GlobalHeader     │  │ TickerBar        │  │ OrderBookPanel   │  │ TradesPanel │ │  │
+│  │  │ (Status Badge)   │  │ (Ticker Cards)   │  │ (OrderBookRows)  │  │ (TradeRows) │ │  │
+│  │  └──────────────────┘  └──────────────────┘  └──────────────────┘  └─────────────┘ │  │
+│  └────────────────────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<details>
+<summary>Click to view Mermaid Diagram syntax</summary>
 
 ```mermaid
 graph TD
-    A[Backend WebSocket] -->|1-20ms Firehose| B(WebSocketManager)
-    B -->|Parse & Buffer| C[(Mutable JS Buffers)]
-    C -->|100ms setInterval Flush| D[Zustand Stores]
-    D -->|Zustand Selectors| E(React UI Components)
-    
-    style A fill:#2d3748,stroke:#4a5568,color:#fff
-    style B fill:#3182ce,stroke:#2b6cb0,color:#fff
-    style C fill:#d69e2e,stroke:#b7791f,color:#fff
-    style D fill:#38a169,stroke:#2f855a,color:#fff
-    style E fill:#805ad5,stroke:#6b46c1,color:#fff
+    subgraph External System
+        WS["WebSocket Server (ws://localhost:8080)"]
+    end
+
+    subgraph Client Application
+        subgraph Network & Ingestion Layer
+            WM["WebSocketManager (Singleton)"]
+            RECON["Reconnection & Backoff Engine"]
+            REG["Subscription Registry"]
+        end
+
+        subgraph Ingestion & Buffering Engine
+            BUF["Mutable In-Memory Buffers\n(100ms Timed Flush)"]
+        end
+
+        subgraph State Management Layer (Zustand Stores)
+            MKT["useMarketStore\n(Focused Symbol & Status)"]
+            TCK["useTickerStore\n(All Symbols Ticker Data)"]
+            OB["useOrderBookStore\n(Bids, Asks, Metrics)"]
+            TRD["useTradesStore\n(Aggregated Trades, 1m Stats)"]
+        end
+
+        subgraph Presentation & UI Layer
+            HDR["GlobalHeader\n(Status Indicator)"]
+            TBAR["TickerBar\n(Isolated Ticker Cards)"]
+            OBP["OrderBookPanel\n(Memoized Rows & Depth Bars)"]
+            TP["TradesPanel\n(Index-Keyed Zero-CLS Rows)"]
+            OEP["OrderEntryPanel\n(Form Controls)"]
+        end
+    end
+
+    WS <-->|WebSockets JSON Stream| WM
+    WM -->|Queue Messages| BUF
+    BUF -->|Batch Flush 10 FPS| TCK
+    BUF -->|Batch Flush 10 FPS| OB
+    BUF -->|Batch Flush 10 FPS| TRD
+    WM -->|Update Status| MKT
+
+    MKT -->|Subscribe / Unsubscribe| WM
+    MKT --> HDR
+    TCK --> TBAR
+    OB --> OBP
+    TRD --> TP
 ```
 
-See [`docs/02-ARCHITECTURE.md`](./docs/02-ARCHITECTURE.md) for a detailed breakdown of component boundaries, state management, WebSocket lifecycle, and data processing pipelines.
+</details>
+
+---
+
+### Low-Level Design (LLD) & Data Flow Architecture
+
+This diagram illustrates the message ingestion lifecycle, batch processing transformations, store updates, and symbol switching workflows.
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                     LOW-LEVEL DATA PIPELINE (LLD)                                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  [1. USER SYMBOL SWITCHING FLOW]
+  User Click (e.g. ETHUSD)
+     │
+     ▼
+  useMarketStore.setFocusedSymbol('ETHUSD')
+     ├─────────────────────────────────────────┐
+     │ 1. Unsubscribe Old                     │ 2. Subscribe New
+     ▼                                         ▼
+  WebSocketManager.unsubscribe('BTCUSD')   WebSocketManager.subscribe('ETHUSD')
+     │                                         │
+     ├─────────────────────────────────────────┤
+     │ 3. Reset Stores immediately             │ 4. Clear old data from UI
+     ▼                                         ▼
+  useOrderBookStore.reset()                useTradesStore.reset()
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  [2. HIGH-FREQUENCY INGESTION & TRANSFORMATION PIPELINE]
+
+  Raw WebSocket Payload (1-5ms interval)
+     │
+     ▼
+  WebSocketManager.onmessage()
+     │
+     ▼
+  useWebSocketConnection (Mutable In-Memory Buffers)
+     ├── latestOrderBookMsg = msg (Overwrites, keeps latest)
+     ├── tradesBuffer.push(msg)   (Appends)
+     └── tickersBuffer.push(msg)  (Appends)
+     │
+     │ [100ms Timed Flush Engine (setInterval @ 10 FPS)]
+     ▼
+  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ PARALLEL BATCH PROCESSING                                                                        │
+  │                                                                                                  │
+  │  OrderBook Branch:                                                                               │
+  │  latestOrderBookMsg ──► groupOrderBook(tickSize) ──► processCumulativeDepths() ──► calculateMetrics()│
+  │                                                                                     │            │
+  │                                                                                     ▼            │
+  │                                                                          useOrderBookStore       │
+  │                                                                                     │            │
+  │  Trades Feed Branch:                                                                │            │
+  │  tradesBuffer[] ──► 100ms Trade Merging (Same price/direction) ──► Bound 50 Rows ─────┤            │
+  │                 └──► 60s Rolling Volume Queue (Max 5,000) ──────► useTradesStore ◄──┘            │
+  │                                                                                                  │
+  │  Ticker Branch:                                                                                  │
+  │  tickersBuffer[] ──► updateTickers(batch) ─────────────────────────► useTickerStore             │
+  └──────────────────────────────────────────────────────────────────────────────────────────────────┘
+     │
+     ▼
+  ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ REACT UI RENDER ISOLATION LAYER                                                                  │
+  │                                                                                                  │
+  │  • TickerCard: Selects only state.tickers['ETHUSD'] (Prevents global re-renders)                 │
+  │  • OrderBookRow: React.memo with custom areEqual (Renders only modified price levels)            │
+  │  • TradesRow: Index-based React keys (DOM nodes locked in place -> CLS = 0.00)                   │
+  └──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<details>
+<summary>Click to view Sequence Diagram syntax</summary>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant WS as WebSocket Server
+    participant WSM as WebSocketManager
+    participant Hook as useWebSocketConnection
+    participant Store as Zustand Stores
+    participant Util as Pure Utils Processing
+    participant UI as React UI Components
+
+    Note over WS, WSM: 1. Connection & Symbol Subscription
+    UI->>Store: Click Symbol (e.g. ETHUSD)
+    Store->>WSM: setFocusedSymbol('ETHUSD')
+    WSM->>WS: unsubscribe('l2_orderbook', ['BTCUSD'])
+    WSM->>Store: reset OrderBook & Trades Stores
+    WSM->>WS: subscribe('l2_orderbook', ['ETHUSD'])
+
+    Note over WS, Hook: 2. Message Ingestion & Mutable Buffering
+    WS->>WSM: Send raw JSON payload (1-5ms interval)
+    WSM->>Hook: Parse JSON & Push to Mutable Buffer (O(1))
+
+    Note over Hook, UI: 3. Timed Batch Flush & Render Engine (Every 100ms / 10 FPS)
+    Hook->>Util: Group OrderBook & Calc Depths (groupOrderBook)
+    Util-->>Hook: Processed Bids/Asks & Metrics
+    Hook->>Store: Batch updateOrderBook(snapshot)
+    Hook->>Store: Batch addTrades(tradesBuffer)
+    Hook->>Store: Batch updateTickers(tickersBuffer)
+
+    Store->>UI: Granular Selector Re-render
+    Note over UI: React.memo & Index-Keyed Rows ensure 0 CLS & 60 FPS
+```
+
+</details>
 
 ## Performance
 
