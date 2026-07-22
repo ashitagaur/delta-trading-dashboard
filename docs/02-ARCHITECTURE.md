@@ -1,90 +1,175 @@
 # Architecture: Delta Trading Dashboard
 
-This document outlines the technical architecture for the real-time trading dashboard. The primary challenge is maintaining strict render isolation and stable performance under extreme WebSocket data loads (stress conditions).
+This document describes the **final implemented architecture** of the real-time trading dashboard. It reflects the actual codebase, not the original plan.
 
 ---
 
 ## 1. Component Boundaries & Render Isolation
 
-To achieve 100% render isolation, we must ensure that high-frequency updates to one domain (e.g., a specific ticker) do not trigger React renders in unrelated domains (e.g., other tickers, the order book, or the trades feed).
+To handle aggressive WebSocket data rates without degrading React rendering performance, every component is scoped to read the minimum possible slice of state.
 
-- **Global Context Avoidance:** We will avoid React Context for high-frequency data, as updating a Context provider re-renders all consumers.
-- **Granular Selectors:** We will use Zustand for state management. Components will select only the exact slices of state they need.
-- **Ticker Isolation:** The `TickerBar` will not render the actual prices. It will only render a list of `TickerCard` components. Each `TickerCard` uses a selector strictly tied to its own symbol: `useTickerStore(state => state.tickers['BTCUSD'])`. This ensures a BTCUSD update never renders ETHUSD.
-- **Focused Product State:** The currently selected symbol will live in a separate `useUIStore`. The Order Book and Trades panels will only re-render when their specific data store updates or the focused symbol changes.
+- **No React Context for hot data.** Context re-renders every consumer on any update. All high-frequency data (tickers, order book, trades) lives exclusively in Zustand stores.
+- **Granular Zustand selectors.** Each `TickerCard` uses a selector bound strictly to its own symbol: `useTickerStore(state => state.tickers['BTCUSD'])`. An ETHUSD update never causes a BTCUSD card to re-render.
+- **`React.memo` on row components.** `OrderBookRow` and `TradesRow` are memoized with custom `areEqual` comparators that prevent re-renders unless the specific row's price, size, or cumulative depth has changed.
+- **Focused product state.** The active symbol lives in `useMarketStore`. The `OrderBookPanel` and `TradesPanel` subscribe only to their respective stores and the focused symbol — they are completely isolated from ticker updates.
 
-## 2. State Ownership (Zustand)
+---
 
-We will use **Zustand** due to its lightweight nature, selector-based rendering, and ability to be updated from outside the React lifecycle (crucial for WebSocket integration).
+## 2. State Architecture (Zustand)
 
-We will split the state into separate stores to guarantee isolation:
-- `useUIStore`: Holds the focused symbol, order book grouping level, and large trade threshold.
-- `useTickerStore`: Holds the latest ticker data for all 6 symbols.
-- `useOrderbookStore`: Holds the processed order book data for the focused symbol.
-- `useTradesStore`: Holds the aggregated trades list and 60s rolling statistics.
-- `useConnectionStore`: Holds the WebSocket status (connected, reconnecting, etc.).
+Four purpose-built Zustand stores with strict separation of concerns:
 
-## 3. WebSocket Singleton & Lifecycle
+| Store | Owns |
+|---|---|
+| `useMarketStore` | `focusedSymbol`, `connectionStatus`, `setFocusedSymbol` |
+| `useTickerStore` | `tickers: Record<SymbolId, TickerMessage>`, `updateTickers(batch)` |
+| `useOrderBookStore` | Processed `bids`, `asks`, `metrics`, `groupTick`, `updateOrderBook`, `reset` |
+| `useTradesStore` | `aggregatedTrades`, `rawTradesQueue`, `buyVolume1m`, `sellVolume1m`, `trades1m` |
 
-The WebSocket connection will be managed by a pure TypeScript singleton (`WebSocketManager`) living outside the React component tree.
+All stores expose **batch mutation APIs** (`updateTickers(msgs[])`, `addTrades(msgs[])`) that process arrays in a single `set()` call to minimize Zustand subscriber notifications.
 
-- **Initialization:** Instantiated once on application load.
-- **Subscription Management:** Maintains an internal registry of desired channels and symbols. It exposes a `subscribe(channel, symbols)` and `unsubscribe(channel, symbols)` API for components to declare their data needs.
-- **Multiplexing:** It manages sending the correct JSON payloads to the backend when subscriptions change, handling the transition smoothly.
-- **Routing:** On receiving a message, it parses the JSON and directly invokes the setter functions of the appropriate Zustand stores (`useTickerStore.getState().setTicker(data)`).
-- **Reconnection:** If the connection drops, it immediately updates `useConnectionStore`, applies exponential backoff, and attempts to reconnect. Upon successful reconnection, it automatically re-transmits all currently registered subscriptions.
+---
 
-## 4. High-Frequency Message Handling
+## 3. WebSocket Singleton & Connection Lifecycle
 
-The backend stress test can push updates at 1-5ms intervals. React cannot (and should not) render at 200+ FPS.
+`WebSocketManager` is a pure TypeScript singleton that lives **outside the React component tree**.
 
-- **Throttling Updates:** The `WebSocketManager` will not push every single message to Zustand immediately. Instead, it will write incoming data to a mutable buffer.
-- **Render Batching:** A `requestAnimationFrame` (rAF) loop (running at ~60Hz / 16ms) will flush the buffer to the Zustand stores. This caps React updates to a maximum of 60 renders per second per component, regardless of how fast the backend pushes data.
+```
+App mounts
+  → useWebSocketConnection (hook)
+    → WebSocketManager.getInstance()
+    → .setCallbacks(onStatus, onMessage)
+    → .subscribe('v2/ticker', ALL_SYMBOLS)
+    → .subscribe('l2_orderbook', [focusedSymbol])
+    → .subscribe('all_trades', [focusedSymbol])
+    → .connect()
+```
+
+**Reconnection:** On `onclose`, the manager immediately transitions to `reconnecting`, applies exponential backoff (`1s → 2s → 4s → ... → 30s max`), and retries up to 10 times. On successful reconnect, `resubscribeActiveChannels()` replays all active subscriptions automatically.
+
+**Symbol switching (`setFocusedSymbol`):**
+1. `unsubscribe('l2_orderbook', [prevSymbol])`
+2. `unsubscribe('all_trades', [prevSymbol])`
+3. `orderBookStore.reset()` + `tradesStore.reset()` — clear stale data immediately
+4. `subscribe('l2_orderbook', [newSymbol])`
+5. `subscribe('all_trades', [newSymbol])`
+
+The Shimmer UI appears during the data-clear window and disappears as soon as the first payload from the new symbol arrives.
+
+---
+
+## 4. High-Frequency Message Handling (Buffered Flush Model)
+
+The WebSocket `onmessage` callback **does not write to Zustand directly**. Instead, it writes into three lightweight mutable JavaScript variables:
+
+```typescript
+let latestOrderBookMsg: OrderBookMessage | null = null;  // Overwritten, not appended
+let tradesBuffer: TradeMessage[] = [];                   // Appended
+let tickersBuffer: TickerMessage[] = [];                 // Appended
+```
+
+A `setInterval` fires every **100ms** and flushes all buffered data to Zustand in a single batch:
+
+```
+100ms tick:
+  → orderBookStore.updateOrderBook(latestOrderBookMsg)  (only most recent snapshot)
+  → tradesStore.addTrades(tradesBuffer)                 (entire batch)
+  → tickerStore.updateTickers(tickersBuffer)            (entire batch)
+  → clear all buffers
+```
+
+This caps React reconciliation to 10 updates/second per panel, regardless of backend rate.
+
+---
 
 ## 5. Data Processing Pipelines
 
-### Order Book (Grouping & Derived Metrics)
-The backend sends full 500-level snapshots (1000 items). 
-- **Processing:** Grouping calculations, depth bar calculations, and spread/imbalance metrics will be computed in a pure function *before* being committed to the Zustand store.
-- **Thread:** Given the 16ms throttle, modern JS engines can easily process an array of 1000 items in a few milliseconds on the main thread. We will avoid the complexity of Web Workers unless profiling explicitly proves it necessary.
-- **Flashing:** The grouping function will compare the new grouped sizes against the previous store state to flag levels that changed by >10% for red/green flashing.
+### Order Book
 
-### Trades (Aggregation & Rolling Stats)
-- **100ms Aggregation:** As trades arrive, the buffer checks the last trade. If `newTrade.price === lastTrade.price` and `newTrade.time - lastTrade.time <= 100ms`, they are merged (size added, count incremented). Otherwise, it's pushed as a new entry.
-- **60s Rolling Window:** The `useTradesStore` will maintain a separate array of trades from the last 60 seconds. A periodic interval (every 1 second) will prune trades older than 60s and recalculate the rolling volume and average size.
-- **Virtualization:** The Trades feed will use `@tanstack/react-virtual` to ensure only the visible rows are rendered in the DOM, maintaining 60FPS even with thousands of aggregated trades in history.
+The backend sends full 500-level snapshots every message (no delta encoding).
 
-## 6. Proposed Folder Structure
+1. Raw `bids` / `asks` arrays are fed to `groupOrderBook(levels, tickSize, isAsk)` — a pure function that snaps each price to the configured tick bucket (`Math.floor` for bids, `Math.ceil` for asks).
+2. Grouped levels pass through `processCumulativeDepths()` which calculates cumulative sizes and depth bar percentages.
+3. `calculateMetrics()` derives spread, midpoint, and bid/ask imbalance ratio.
+4. The final processed object is committed to `useOrderBookStore` in a single `set()`.
+
+### Trades Feed
+
+1. Incoming `TradeMessage[]` batch is iterated. Each trade checks the `agg[0]` (most recent aggregated trade): if price, direction, and ≤100ms timestamp all match, it merges (size += newSize, count++). Otherwise, a new row is prepended with `unshift`.
+2. `aggregatedTrades` is bounded to **50 visible rows**.
+3. A parallel `rawTradesQueue` (bounded to **5,000 entries**) tracks raw trades for rolling 1-minute volume statistics.
+4. `useTradesDecay` runs a 5-second `setInterval` to prune trades older than 60s from the rolling queue.
+
+---
+
+## 6. Actual Folder Structure
 
 ```text
 src/
+├── __tests__/
+│   ├── services/WebSocketManager.test.ts
+│   ├── store/
+│   │   ├── marketStore.test.ts
+│   │   ├── orderBookStore.test.ts
+│   │   ├── tickerStore.test.ts
+│   │   └── tradesStore.test.ts
+│   └── utils/
+│       ├── format.test.ts
+│       ├── orderbook.test.ts
+│       ├── parse.test.ts
+│       └── trades.test.ts
 ├── components/
-│   ├── Tickers/          # TickerBar, TickerCard
-│   ├── OrderBook/        # OrderBookPanel, LevelRow, SpreadMetrics
-│   ├── Trades/           # TradesFeed, TradeRow, RollingStats
-│   └── Shared/           # Dropdowns, StatusIndicators
-├── store/
-│   ├── uiStore.ts
-│   ├── tickerStore.ts
-│   ├── orderbookStore.ts
-│   ├── tradesStore.ts
-│   └── connectionStore.ts
-├── services/
-│   ├── WebSocketManager.ts
-│   └── ws-types.ts       # TypeScript interfaces for payloads
-├── utils/
-│   ├── formatters.ts     # Currency and precision formatting
-│   ├── orderbook.ts      # Pure grouping/aggregation functions
-│   └── trades.ts         # Pure trade merging logic
+│   ├── Layout/
+│   │   ├── GlobalHeader.tsx
+│   │   ├── Dashboard.tsx
+│   │   └── Footer.tsx
+│   ├── OrderBook/
+│   │   ├── OrderBookPanel.tsx
+│   │   ├── OrderBookRow.tsx       # React.memo with custom areEqual
+│   │   └── OrderBookMetrics.tsx
+│   ├── TradesFeed/
+│   │   ├── TradesPanel.tsx
+│   │   └── TradesRow.tsx          # React.memo
+│   ├── Tickers/
+│   │   ├── TickerBar.tsx
+│   │   └── TickerCard.tsx
+│   ├── OrderEntry/
+│   │   └── OrderEntryPanel.tsx
+│   └── Shared/
+│       ├── ConnectionStatusIndicator.tsx
+│       ├── TableShimmer.tsx
+│       └── PanelPlaceholder.tsx
 ├── hooks/
-│   └── useAutoScroll.ts  # Logic for trades auto-scroll and pausing
-├── App.tsx
-└── main.tsx
+│   ├── useWebSocketConnection.ts  # Buffer + flush interval lifecycle
+│   ├── useFlashEffect.ts          # Price flash animation ref
+│   └── useTradesDecay.ts          # 60s rolling window pruner
+├── services/
+│   └── WebSocketManager.ts        # Singleton, reconnect, subscription registry
+├── store/
+│   ├── marketStore.ts
+│   ├── tickerStore.ts
+│   ├── orderBookStore.ts
+│   └── tradesStore.ts
+├── types/
+│   └── market.ts
+├── utils/
+│   ├── format.ts
+│   ├── orderbook.ts
+│   ├── parse.ts
+│   └── trades.ts
+└── constants/
+    └── market.ts                  # SUPPORTED_SYMBOLS, SYMBOL_CONFIG, grouping options
 ```
 
-## 7. Testing Strategy
+---
 
-1. **Unit Testing Pure Logic (Critical):** The math inside `utils/orderbook.ts` (grouping decimals without floating-point errors) and `utils/trades.ts` (100ms aggregation) will be heavily tested using Vitest.
-2. **WebSocket Manager:** Test connection lifecycle, automatic resubscription, and exponential backoff using `vitest-websocket-mock`.
-3. **Component Rendering:** Use React Testing Library to verify that user interactions (like switching symbols or changing grouping) correctly trigger state updates.
-4. **Stress Testing:** Manually use the backend's runtime config API to push trades to 1ms intervals and verify via React Profiler that render isolation holds and no memory leaks occur.
+## 7. Connection Status UI Contract
+
+| Status | Indicator | Panel Behavior |
+|---|---|---|
+| `connecting` | Yellow dot | Shimmer skeleton shown |
+| `connected` | Green dot | Live data rendered |
+| `reconnecting` | Orange dot | **Existing data preserved** (not wiped); shimmer NOT shown |
+| `disconnected` | Red dot | "Disconnected" placeholder shown |
+
+The key decision: `isReady` in both panels is driven purely by **data presence**, not connection status. This means a brief reconnect does not flash a loading state — the user sees a frozen-but-visible order book with an orange status indicator instead.
