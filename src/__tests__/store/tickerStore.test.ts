@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { useTickerStore } from './tickerStore';
-import { TickerMessage } from '../types/market';
+import { useTickerStore } from '../../store/tickerStore';
+import { TickerMessage } from '../../types/market';
 
 describe('tickerStore', () => {
   it('updates ticker state cleanly without removing other symbols', () => {

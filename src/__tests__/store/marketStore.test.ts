@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useMarketStore } from './marketStore';
-import { WebSocketManager } from '../services/WebSocketManager';
+import { useMarketStore } from '../../store/marketStore';
+import { WebSocketManager } from '../../services/WebSocketManager';
 
 const { wsMockInstance } = vi.hoisted(() => ({
   wsMockInstance: {
@@ -10,7 +10,7 @@ const { wsMockInstance } = vi.hoisted(() => ({
 }));
 
 // Mock WebSocketManager
-vi.mock('../services/WebSocketManager', () => {
+vi.mock('../../services/WebSocketManager', () => {
   return {
     WebSocketManager: {
       getInstance: vi.fn(() => wsMockInstance)

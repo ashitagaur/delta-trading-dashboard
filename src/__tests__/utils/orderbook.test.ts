@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { groupOrderBook, processCumulativeDepths, calculateMetrics } from './orderbook';
-import { OrderBookLevel } from '../types/market';
+import { groupOrderBook, processCumulativeDepths, calculateMetrics } from '../../utils/orderbook';
+import { OrderBookLevel } from '../../types/market';
 
 describe('orderbook utils', () => {
   it('groups bids correctly (rounding down)', () => {

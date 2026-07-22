@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseWebSocketMessage, calculatePercentageChange, getTradeSide } from './parse';
+import { parseWebSocketMessage, calculatePercentageChange, getTradeSide } from '../../utils/parse';
 
 describe('parse utilities', () => {
   it('parseWebSocketMessage parses valid json', () => {

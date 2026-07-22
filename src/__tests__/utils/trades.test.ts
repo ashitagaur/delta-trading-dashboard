@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isBuyTrade, isLargeTrade } from './trades';
+import { isBuyTrade, isLargeTrade } from '../../utils/trades';
 
 describe('trades utils', () => {
   it('identifies buy trades (buyer is taker)', () => {

@@ -16,7 +16,7 @@ export function TradesPanel() {
 
   useTradesDecay();
 
-  const isReady = status === 'connected' && aggregatedTrades.length > 0;
+  const isReady = aggregatedTrades.length > 0;
   const totalVolume = buyVolume1m + sellVolume1m;
   const avgSize = trades1m > 0 ? (totalVolume / trades1m) : 0;
 

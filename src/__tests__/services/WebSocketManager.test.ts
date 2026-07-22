@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WebSocketManager } from './WebSocketManager';
+import { WebSocketManager } from '../../services/WebSocketManager';
 
 describe('WebSocketManager', () => {
   let wsMock: {

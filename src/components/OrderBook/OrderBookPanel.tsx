@@ -15,7 +15,7 @@ export function OrderBookPanel() {
   const config = SYMBOL_CONFIG[focusedSymbol];
   const baseCurrency = focusedSymbol.replace('USD', '');
 
-  const isReady = status === 'connected' && bids.length > 0 && asks.length > 0;
+  const isReady = bids.length > 0 && asks.length > 0;
 
   // Asks are sorted ascending (lowest price first) in the store.
   // We want to render them descending so the lowest ask is at the bottom (near the spread).

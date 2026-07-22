@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatPrice, formatSize, formatPercentage, formatTime } from './format';
+import { formatPrice, formatSize, formatPercentage, formatTime } from '../../utils/format';
 
 describe('format utilities', () => {
   it('formatPrice respects symbol precision', () => {
